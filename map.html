@@ -3,38 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
-    <title>간단한 지도 표시하기</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+    <title>실시간 위치 표시하기</title>
     <script type="text/javascript" src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=1x2rrx6tnk"></script>
 </head>
 <body>
 <div id="map" style="width:100%;height:400px;"></div>
 
 <script>
-    var map = new naver.maps.Map('map', {
-        center: new naver.maps.LatLng(37.3595704, 127.105399),
-        zoom: 15
-    });
+    let map, marker;
 
-    var marker = new naver.maps.Marker({
-        position: new naver.maps.LatLng(37.3595704, 127.105399),
-        map: map
-    });
+    function initMap() {
+        map = new naver.maps.Map('map', {
+            center: new naver.maps.LatLng(37.3595704, 127.105399),
+            zoom: 15
+        });
 
-    var infowindow = new naver.maps.InfoWindow({
-        content: "<div><h1>정자동 그린팩토리</h1></div>"
-    });
+        marker = new naver.maps.Marker({
+            position: new naver.maps.LatLng(37.3595704, 127.105399),
+            map: map
+        });
+    }
 
-    naver.maps.Event.addListener(marker, "click", function (e) {
-        if (infowindow.getMap()) {
-            infowindow.close();
-        } else {
-            infowindow.open(map, marker);
+    function updateLocation(lat, lng) {
+        var newLocation = new naver.maps.LatLng(lat, lng);
+        map.setCenter(newLocation);
+        marker.setPosition(newLocation);
+    }
+
+    async function connectToBLE() {
+        let options = {
+            filters: [
+                { name: 'ArduinoGPS' }
+            ],
+            optionalServices: ['180F']
+        };
+
+        try {
+            const device = await navigator.bluetooth.requestDevice(options);
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService('180F');
+            const latitudeChar = await service.getCharacteristic('2A6E');
+            const longitudeChar = await service.getCharacteristic('2A6F');
+
+            latitudeChar.startNotifications();
+            longitudeChar.startNotifications();
+
+            latitudeChar.addEventListener('characteristicvaluechanged', (event) => {
+                let latitude = event.target.value.getFloat32(0, true);
+                updateLocation(latitude, marker.getPosition().lng());
+            });
+
+            longitudeChar.addEventListener('characteristicvaluechanged', (event) => {
+                let longitude = event.target.value.getFloat32(0, true);
+                updateLocation(marker.getPosition().lat(), longitude);
+            });
+
+            console.log('Connected to BLE device');
+        } catch (error) {
+            console.error('Failed to connect to BLE device', error);
         }
-    });
+    }
 
-    infowindow.open(map, marker);
+    document.addEventListener('DOMContentLoaded', (event) => {
+        initMap();
+        connectToBLE();
+    });
 </script>
 </body>
 </html>
